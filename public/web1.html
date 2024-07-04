@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tour Routine</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" 
+      integrity="sha512-iecdLmaskl7CVkqk1w27ADi6LqF0qV8c9TxrJ+ulw6MzhhanWZYuZICA+Is6d4v60z8KaN0X5G/lW347q8g==" 
+      crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            width: 100%;
+            height: 400px;
+        }
+        
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+<!-- <input type="file" id="photo" accept="image/*"> -->
+<input type="text" id="placeNames" placeholder="Input tour site,like Jiuzhaigou">
+<!-- <button onclick="addLocation()">Show site</button> -->
+<button id="addSiteButton">Add Tour Site</button> <br>  </body>
+
+<script>
+    var map = L.map('map').setView([39.9, 116.4], 5);
+    var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+    })//.addTo(map);
+    osm.addTo(map);
+   
+let places = [];
+let photoData = null;
+let polyline; // The line on the map
+
+// Function to create a marker with a click listener and tooltip
+function createMarker(place) { // Add startDate parameter
+
+  const marker = L.marker(place.latLng)
+    .addTo(map);
+
+  var latlngs = places.map(function(place) { return place.latLng.map(Number); });
+  var polyline = L.polyline(latlngs, {color: 'blue'}).addTo(map);
+  map.fitBounds(polyline.getBounds());
+  
+  // Add the click listener 
+  marker.on('click', function() {
+    openInputForm(place.latLng);
+    console.log('latlon', place.latLng[0]);
+  });
+  // Bind a tooltip to display the startDate
+  marker.bindTooltip(`${place.name}`, {
+    permanent: true, // Make the tooltip always visible
+    direction: 'top', // Set the tooltip direction
+    className: 'marker-tooltip' // Add a class for styling
+  });
+ 
+}
+
+// Function to add a new location and draw the line
+async function addLocation() {
+  const input = document.getElementById('placeNames').value;
+  const name = input.trim();
+  if (name === "") return; // Do nothing if input is empty
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${name}`);
+  const data = await response.json();
+  if (data.length > 0) {
+    const latLng = [data[0].lat, data[0].lon];
+    places.push({ name: name, latLng });
+   
+    // Pass the startDate to the createMarker function
+    createMarker({ name: name, latLng }); // Create marker only once
+   
+    updatePolyline(); 
+    // Clear the input field
+    document.getElementById('placeNames').value = "";
+  }
+}
+
+// Function to update the line on the map
+function updatePolyline() {
+    if (polyline) {
+        map.removeLayer(polyline); // Remove the old line
+    }
+    if (places.length >= 2) { // Need at least two points for a line
+        const latlngs = places.map(place => place.latLng.map(Number));
+        polyline = L.polyline(latlngs, { color: 'blue' }).addTo(map);
+        map.fitBounds(polyline.getBounds());
+    }
+}
+
+function saveSiteInfo(event) {
+  event.preventDefault(); 
+
+  var startDate = document.getElementById('startDate').value;
+  var endDate = document.getElementById('endDate').value;
+  var weather = document.getElementById('weather').value;
+  var latitude = document.getElementById('latitude').value;
+  var longitude = document.getElementById('longitude').value;
+  const fileInput = document.getElementById('photo');
+  const file = fileInput.files[0];  // 获取选中的文件
+
+  // 构造FormData对象以包含文件数据
+  var formData = new FormData();
+  formData.append('startDate', startDate);
+  formData.append('endDate', endDate);
+  formData.append('weather', weather);
+  formData.append('latitude', latitude);
+  formData.append('longitude', longitude);
+  formData.append('photo', file); // 将文件添加到 FormData 对象
+ 
+  console.log('photofile',file);
+  console.log('form',formData)
+
+  fetch('/tour', {
+    method: 'POST',
+    body: formData,
+  })
+  .then(response => {
+    console.log('response',response);
+    return response.json();
+  })
+  .then(data => {
+    // 使用服务器返回的数据更新地图
+    console.log('data',data.photoUrl)
+    updateMapWithSavedInfo(startDate, endDate, weather, data.photoUrl, latitude,longitude);
+  })
+  .catch(error => console.error('Error:', error));
+//   map.closePopup();
+}
+
+function updateMapWithSavedInfo(startDate, endDate, weather,photo, latitude, longitude) {
+    
+        // 这里假设data包含经纬度latLng和其他信息
+        const marker = L.marker([latitude, longitude]).addTo(map);
+        // 设置标记的弹出窗口内容
+        var popupContent = `
+            <div>startDate: ${startDate}</div>
+            <div>endDate: ${endDate}</div>
+            <div>weather: ${weather}</div>
+           
+        `;
+        photo=photo.split('/').pop();
+        console.log('phto',photo) //1720077827905-PSPNET.png
+        if (photo) {
+        fetch('/uploads/'+photo)
+        .then(response => response.blob())
+        .then(blob => {
+            const imageUrl = URL.createObjectURL(blob);
+            console.log('imageurl', imageUrl);
+            // 更新标记的弹出窗口内容
+            popupContent += `<div><img src="${imageUrl}" alt="photo" style="width: 100px;"/></div>`;
+            marker.bindPopup(popupContent).openPopup();
+    // 在页面上显示图片
+    // const imgElement = document.createElement('img');
+    // imgElement.src = imageUrl;
+    // imgElement.alt = 'photo';
+    // imgElement.style.width = '100px';
+    // document.body.appendChild(imgElement); 
+  })
+  .catch(error => console.error('Error fetching image:', error));
+    } else {
+        marker.bindPopup(popupContent).openPopup();
+    }
+}
+       
+        
+    
+
+function openInputForm(latLng) {
+    var inputFormHtml = `
+        <div>
+            <input type="hidden" id="latitude" name="latitude" value="${latLng[0]}">
+            <input type="hidden" id="longitude" name="longitude" value="${latLng[1]}">
+            <label for="startDate">startDate:</label>
+            <input type="date" id="startDate" name="startDate"><br>
+            <label for="endDate">endDate:</label>
+            <input type="date" id="endDate" name="endDate"><br>
+            <label for="weather">weather:</label>
+            <select id="weather" name="weather">
+                <option value="sunny">sunny</option>
+                <option value="cloudy">cloudy</option>
+                <option value="rain">rain</option>
+                <option value="snow">snow</option>
+            </select><br>
+            <label for="photo">Photo:</label>
+            <input type="file" id="photo" name="photo" accept="image/*">
+            <img id="preview" src="#" alt="Preview Image" style="display: none; max-width: 100%; max-height: 200px;">
+            <button onclick="saveSiteInfo(event)">Save</button>
+        </div>
+    `;
+
+    // 创建地图标记并绑定弹出窗口w
+    const marker = L.marker(latLng)
+        .addTo(map)
+        .bindPopup(inputFormHtml, { maxWidth: "auto" })
+        .openPopup();
+
+    // 获取表单中的照片文件和预览功能
+    const fileInput = marker._popup._contentNode.querySelector('#photo');
+    const preview = marker._popup._contentNode.querySelector('#preview');
+   
+
+    fileInput.addEventListener('change', function() {
+        const file = this.files[0];
+        if (file) {
+            const reader = new FileReader();
+
+            reader.addEventListener('load', function() {
+                preview.src = reader.result;
+                preview.style.display = 'block';
+                photoData = reader.result; // 保存Base64编码的照片数据
+            });
+
+            reader.readAsDataURL(file);
+        } else {
+            preview.src = '#';
+            preview.style.display = 'none';
+            photoData = null;
+        }
+    console.log('photodata1',photoData)
+    });
+    console.log('photodata2',photoData)
+    
+}
+
+// Event listener for the "Show site" button
+document.getElementById('addSiteButton').addEventListener('click', addLocation);
+
+
+</script>
+
+</body>
+</html>
